@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 #hudScore .lbl{font-size:10px;letter-spacing:2px;opacity:.7}
 #hudScore .val{font-size:30px;font-weight:800;text-shadow:0 2px 8px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
 #hudLevel{top:calc(54px + env(safe-area-inset-top));left:14px;background:rgba(0,0,0,.45);border:1px solid rgba(255,209,102,.5);color:#ffd166;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:800;letter-spacing:1px}
-#hudCoins{top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:7px 16px;font-size:16px;font-weight:700}
+#hudCoins{top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:7px 14px;font-size:15px;font-weight:700;white-space:nowrap;max-width:92vw;overflow:hidden}
 #hudBtns{top:calc(10px + env(safe-area-inset-top));right:12px;display:flex;gap:10px;pointer-events:auto}
 .hbtn{width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.45);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .hbtn:active{transform:scale(.92)}
@@ -1288,7 +1288,7 @@ function crash(){
     AudioSys.crash();
     let nearV = null, nz = 99;
     for(const v of G.traffic){ const az = Math.abs(v.z); if(az < 0.18 && az < nz){ nz = az; nearV = v; } }
-    if(nearV) G.px = clamp(G.px + (G.px >= nearV.lane ? 0.38 : -0.38), -1.12, 1.12);
+    if(nearV) G.px = clamp(G.px + (G.px >= nearV.lane ? 0.38 : -0.38), -0.8, 0.8);
     G.traffic = G.traffic.filter(v => v.z > 0.45 || Math.abs(v.lane - G.px) > 0.55);
     puff(px, py, 22, ['#ff5d5d','#f59e0b','#fff'], 250, 1.0, 300, 7);
     popup(px, py - 120 * baseS(), '💔', '#ff5d5d', 46);
@@ -1335,7 +1335,7 @@ function updatePlay(dt){
   if(g.inv > 0) g.inv -= dt;
   if(g.invulnT > 0) g.invulnT -= dt;
   if(g.honkCd > 0) g.honkCd -= dt;
-  g.curve = Math.sin(g.dist * 0.011) * 0.42; // gentle S-curves keep the road alive
+  g.curve = Math.sin(g.dist * 0.011) * 0.35; // gentle S-curves keep the road alive
   if(g.comboT > 0){ g.comboT -= dt; if(g.comboT <= 0) g.combo = 0; }
   if(g.fareT > 0){ g.fareT -= dt; if(g.fareT <= 0) g.fareStreak = 0; }
 
@@ -1356,7 +1356,7 @@ function updatePlay(dt){
   const kL = keys.left, kR = keys.right;
   if(kL || kR) g.drag = false;
   if(g.drag){
-    const target = clamp((g.dragX - (W / 2 + curveOff(0))) / (roadHalf(0) * 0.80), -1.12, 1.12);
+    const target = clamp((g.dragX - (W / 2 + curveOff(0))) / (roadHalf(0) * 0.80), -0.8, 0.8);
     g.px += (target - g.px) * Math.min(1, 14 * dt);
     g.pvx = (target - g.px) * 6;
   } else {
@@ -1365,8 +1365,8 @@ function updatePlay(dt){
     g.pvx *= Math.max(0, 1 - 5.5 * dt);
     g.px += g.pvx * dt;
   }
-  if(g.px > 1.12){ g.px = 1.12; g.pvx = Math.min(0, g.pvx); }
-  if(g.px < -1.12){ g.px = -1.12; g.pvx = Math.max(0, g.pvx); }
+  if(g.px > 0.8){ g.px = 0.8; g.pvx = Math.min(0, g.pvx); }
+  if(g.px < -0.8){ g.px = -0.8; g.pvx = Math.max(0, g.pvx); }
 
   // exhaust + dust
   g.exT = (g.exT || 0) - dt;
@@ -1572,8 +1572,8 @@ function updateHUD(){
     if(G.mode === 'trip' && G.trip){
       const t = G.trip;
       tv.textContent = t.phase === 'aboard'
-        ? ' · 🚩 ' + Math.max(0, Math.round(t.dropDist - G.dist)) + 'm'
-        : ' · 🧍 waiting…';
+        ? ' · 🚩' + Math.max(0, Math.round(t.dropDist - G.dist)) + 'm'
+        : ' · 🧍…';
     } else tv.textContent = '';
   }
   document.getElementById('hudLevel').textContent = 'LV ' + G.level;
