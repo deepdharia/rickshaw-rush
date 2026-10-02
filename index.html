@@ -939,12 +939,8 @@ function drawCar(x, y, s, col, seed){
   ctx.fillStyle = 'rgba(0,0,0,.38)';
   ctx.beginPath(); ctx.ellipse(0, 5, 58, 12, 0, 0, TAU); ctx.fill();
   const taxi = hash(seed * 3.3) > 0.72;
-  for(const wx of [-38, 38]){
-    wheel(wx, -16, 15, spin);
-    // wheel arch shadow
-    ctx.fillStyle = 'rgba(0,0,0,.35)';
-    ctx.beginPath(); ctx.arc(wx, -16, 18, Math.PI, TAU); ctx.fill();
-  }
+  // wheels first — the body overlaps their tops so they sit IN the arches
+  for(const wx of [-42, 42]) wheel(wx, -14, 16, spin);
   const bg = ctx.createLinearGradient(0, -96, 0, -20);
   bg.addColorStop(0, shade(col, 26)); bg.addColorStop(0.55, col); bg.addColorStop(1, shade(col, -42));
   ctx.fillStyle = bg;
@@ -954,6 +950,9 @@ function drawCar(x, y, s, col, seed){
   sg.addColorStop(0, 'rgba(255,255,255,.22)'); sg.addColorStop(0.25, 'rgba(255,255,255,0)');
   sg.addColorStop(0.8, 'rgba(0,0,0,0)'); sg.addColorStop(1, 'rgba(0,0,0,.30)');
   ctx.fillStyle = sg; rr(-52, -92, 104, 72, 14); ctx.fill();
+  // wheel wells — dark arches so the tyres read as tucked into the body
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  for(const wx of [-42, 42]){ ctx.beginPath(); ctx.arc(wx, -20, 21, Math.PI, TAU); ctx.fill(); }
   // cabin
   ctx.fillStyle = night > 0.5 ? '#202f49' : '#37485f';
   rr(-40, -124, 80, 42, 12); ctx.fill();
@@ -1002,7 +1001,7 @@ function drawBus(x, y, s, col){
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   ctx.fillStyle = 'rgba(0,0,0,.40)';
   ctx.beginPath(); ctx.ellipse(0, 5, 70, 13, 0, 0, TAU); ctx.fill();
-  for(const wx of [-46, 46]) wheel(wx, -18, 19, spin);
+  for(const wx of [-52, 52]) wheel(wx, -16, 20, spin);
   const bg = ctx.createLinearGradient(0, -178, 0, -22);
   bg.addColorStop(0, shade(col, 24)); bg.addColorStop(0.6, col); bg.addColorStop(1, shade(col, -40));
   ctx.fillStyle = bg;
@@ -1011,6 +1010,9 @@ function drawBus(x, y, s, col){
   sg.addColorStop(0, 'rgba(255,255,255,.18)'); sg.addColorStop(0.3, 'rgba(255,255,255,0)');
   sg.addColorStop(1, 'rgba(0,0,0,.32)');
   ctx.fillStyle = sg; rr(-62, -176, 124, 154, 12); ctx.fill();
+  // wheel wells — dark arches so the tyres sit IN the body, not floating under it
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  for(const wx of [-52, 52]){ ctx.beginPath(); ctx.arc(wx, -22, 25, Math.PI, TAU); ctx.fill(); }
   // route board
   ctx.fillStyle = '#0d0d10';
   rr(-40, -172, 80, 20, 5); ctx.fill();
@@ -1059,7 +1061,10 @@ function drawTruck(x, y, s){
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   ctx.fillStyle = 'rgba(0,0,0,.42)';
   ctx.beginPath(); ctx.ellipse(0, 5, 72, 13, 0, 0, TAU); ctx.fill();
-  for(const wx of [-48, -16, 48]) wheel(wx, -18, 18, spin);
+  // mudflaps first (behind the wheels) so they peek out below instead of covering the tyres
+  ctx.fillStyle = '#0d0d0f';
+  for(const wx of [-50, 50]) ctx.fillRect(wx - 14, -36, 28, 44);
+  for(const wx of [-50, 50]) wheel(wx, -16, 19, spin);
   // container — full desi art
   const cg = ctx.createLinearGradient(0, -182, 0, -34);
   cg.addColorStop(0, '#259a63'); cg.addColorStop(0.55, '#177a4b'); cg.addColorStop(1, '#0b4a2d');
@@ -1069,6 +1074,9 @@ function drawTruck(x, y, s){
   sg.addColorStop(0, 'rgba(255,255,255,.14)'); sg.addColorStop(0.35, 'rgba(255,255,255,0)');
   sg.addColorStop(1, 'rgba(0,0,0,.35)');
   ctx.fillStyle = sg; rr(-64, -180, 128, 146, 10); ctx.fill();
+  // wheel wells — dark arches so the tyres sit IN the body
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  for(const wx of [-50, 50]){ ctx.beginPath(); ctx.arc(wx, -34, 24, Math.PI, TAU); ctx.fill(); }
   // peacock fans
   for(const fx of [-36, 0, 36]){
     for(let pr = 14; pr > 4; pr -= 5){
@@ -1092,11 +1100,12 @@ function drawTruck(x, y, s){
     ctx.fillStyle = (tx / 12) % 2 ? '#ff5d5d' : '#ffd166';
     ctx.beginPath(); ctx.arc(tx, -40, 3.4, 0, TAU); ctx.fill();
   }
-  // mudflaps + lamps
+  // TATA badges on the tailgate — clear of the wheels
   ctx.fillStyle = '#0d0d0f';
-  ctx.fillRect(-60, -26, 22, 16); ctx.fillRect(38, -26, 22, 16);
-  ctx.fillStyle = '#f5b301'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('TATA', -49, -15); ctx.fillText('TATA', 49, -15);
+  rr(-30, -34, 22, 18, 4); ctx.fill();
+  rr(8, -34, 22, 18, 4); ctx.fill();
+  ctx.fillStyle = '#f5b301'; ctx.font = '800 9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('TATA', -19, -21); ctx.fillText('TATA', 19, -21);
   tailLamp(-54, -48, 13, 15, night);
   tailLamp(54, -48, 13, 15, night);
   ctx.restore();
@@ -2097,7 +2106,14 @@ function frame(now){
   } else { G.shakeX = 0; G.shakeY = 0; }
 
   ctx.save();
-  ctx.translate(G.shakeX, G.shakeY);
+  // bumpy-road feel: the whole world gently bobs with speed — engine buzz + slow road swells.
+  // The fixed HUD stays put, so the relative motion reads as driving over the road.
+  let bobY = 0;
+  if(G.state === ST.PLAY && !G.paused){
+    const sp = G.speedT || 0;
+    bobY = Math.sin(G.time * 23) * 1.7 * sp + Math.sin(G.scroll * 0.011) * 3.4 * sp;
+  }
+  ctx.translate(G.shakeX, G.shakeY + bobY);
   if(G.state === ST.OPENING){ updateOpening(dt); updateParts(dt); drawOpening(); }
   else if(G.state === ST.COUNTDOWN){
     updateParts(dt);
