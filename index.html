@@ -33,7 +33,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 
 <div class="hud" id="hudScore"><div class="lbl">SCORE</div><div class="val" id="scoreVal">0</div></div>
 <div class="hud" id="hudLevel">LV 1</div>
-<div class="hud hidden" id="hudCoins">🪙 <span id="coinVal">0</span> &nbsp;·&nbsp; 🧍 <span id="fareVal">0</span> &nbsp;·&nbsp; <span id="heartVal">♥♥♥</span></div>
+<div class="hud hidden" id="hudCoins">🪙 <span id="coinVal">0</span> &nbsp;·&nbsp; 🧍 <span id="fareVal">0</span> &nbsp;·&nbsp; <span id="heartVal">♥♥♥</span> <span id="tripVal"></span></div>
 <div class="hud" id="hudBtns">
   <div class="hbtn" id="muteBtn">🔊</div>
   <div class="hbtn hidden" id="pauseBtn">⏸</div>
@@ -313,10 +313,16 @@ const MISSIONS = [
   {id:'fares10',  name:'Fare Wala',      desc:'Pick up 10 fares (total)',    target:10,   reward:60,  kind:'life', key:'fares'},
   {id:'near25',   name:'Close Call King',desc:'25 near-misses (total)',      target:25,   reward:80,  kind:'life', key:'nears'},
   {id:'honk50',   name:'Horn Master',    desc:'Honk 50 vehicles aside (total)',target:50,  reward:70,  kind:'life', key:'honks'},
+  {id:'trip1',    name:'First Sawari',   desc:'Complete 1 trip',               target:1,   reward:40,  kind:'life', key:'trips'},
+  {id:'trip15',   name:'Trip Sultan',    desc:'Complete 15 trips (total)',     target:15,  reward:100, kind:'life', key:'trips'},
 ];
-G.mstat = Object.assign({coins:0, fares:0, nears:0, honks:0}, store.get('mstat', {}));
+G.mstat = Object.assign({coins:0, fares:0, nears:0, honks:0, trips:0}, store.get('mstat', {}));
 G.mprog = store.get('mprog', {});
 G.garTab = 'paints';
+G.mode = 'arcade';        // 'arcade' | 'trip'
+G.menuView = 'modes';     // 'modes' | 'garage'
+G.garageFrom = 'over';    // where the garage was opened from
+G.trip = null;            // per-run trip state
 function missionProg(m){
   if(m.kind === 'run'){
     if(m.key === 'score') return Math.floor(G.score);
@@ -1204,6 +1210,7 @@ function resetRun(){
   G.drag = false; G.dragX = 0;
   G.tapZones = [];
   G.level = 1; G.combo = 0; G.comboT = 0; G.fareStreak = 0; G.fareT = 0;
+  G.trip = {phase:'wait', pax:null, dropDist:0, dropLane:0, waitT:1.5, aboardT:0, trips:0, earned:0};
 }
 function playerSpeed(){ return lerp(1.5, 3.4, G.speedT); }
 
@@ -1233,6 +1240,18 @@ function spawnPax(){
     skin: pick(['#8d5a2b','#a06a35','#7a4a22']),
     shirt: pick(['#e63946','#4361ee','#2a9d8f','#7209b7','#f59e0b'])});
 }
+function spawnTripPax(){
+  const side = Math.random() < 0.5 ? -1 : 1;
+  G.trip.pax = {side, z: 1.0,
+    skin: pick(['#8d5a2b','#a06a35','#7a4a22']),
+    shirt: pick(['#e63946','#4361ee','#2a9d8f','#7209b7','#f59e0b'])};
+}
+function tripBail(msg){
+  const t = G.trip;
+  if(!t || t.phase !== 'aboard') return;
+  t.phase = 'wait'; t.waitT = 3; t.pax = null;
+  popup(W / 2, H * 0.42, msg || '🧍 Passenger bailed!', '#ff9f1c', 24);
+}
 
 function doHonk(){
   if(G.state !== ST.PLAY || G.honkCd > 0) return;
@@ -1258,6 +1277,7 @@ function doHonk(){
 
 function crash(){
   if(G.inv > 0 || G.invulnT > 0 || G.state !== ST.PLAY) return;
+  tripBail(); // trip-mode passenger jumps out on any crash
   const px = laneX(G.px, 0), py = yAt(0) - 60 * baseS();
   if(G.hearts > 1){
     // lose a heart but keep driving — runs last much longer
@@ -1368,7 +1388,7 @@ function updatePlay(dt){
   g.coinT -= dt;
   if(g.coinT <= 0){ g.coinT = rand(4, 8); spawnCoinLine(); }
   g.paxT -= dt;
-  if(g.paxT <= 0){ g.paxT = rand(6, 11); spawnPax(); }
+  if(g.paxT <= 0){ g.paxT = rand(6, 11); if(G.mode === 'arcade') spawnPax(); }
 
   // traffic
   const rel = ps * 0.24;
@@ -1408,7 +1428,8 @@ function updatePlay(dt){
       puff(laneX(c.lane, 0), yAt(c.z), 8, ['#ffd23e','#fff3b0'], 120, 0.5, 0, 4);
     }
   }
-  // passengers
+  // passengers (arcade quick fares)
+  if(G.mode === 'arcade'){
   for(let i = g.pax.length - 1; i >= 0; i--){
     const p = g.pax[i];
     p.z -= rel * dt;
@@ -1423,6 +1444,46 @@ function updatePlay(dt){
       popup(W / 2 + p.side * W * 0.28, H * 0.55,
         '+₹' + fare + ' FARE' + (g.fareStreak > 1 ? ' x' + g.fareStreak : '') + ' 🙏', '#7CFC98', 24);
       puff(W / 2 + p.side * W * 0.28, H * 0.55, 10, ['#7CFC98','#fff'], 130, 0.6, 0, 4);
+    }
+  }
+  }
+  // ---- TRIP MODE: pick up, drive to the flag, drop off ----
+  if(G.mode === 'trip'){
+    const t = G.trip;
+    if(t.phase === 'wait'){
+      t.waitT -= dt;
+      if(!t.pax && t.waitT <= 0) spawnTripPax();
+      if(t.pax){
+        const p = t.pax;
+        p.z -= rel * dt;
+        if(p.z < -0.15){ t.pax = null; t.waitT = 2; }
+        else if(p.z < 0.14 && p.z > -0.08 && Math.sign(g.px) === p.side && Math.abs(g.px) > 0.52){
+          // passenger hops in — destination appears ahead
+          t.phase = 'aboard'; t.aboardT = 0; t.pax = null;
+          t.dropDist = g.dist + rand(350, 500);
+          t.dropLane = pick(LANES4);
+          popup(W / 2, H * 0.38, '🧍 PASSENGER ABOARD!', '#7CFC98', 26);
+          popup(W / 2, H * 0.38 + 38, 'Drive to the 🚩 flag!', '#ffd166', 20);
+          AudioSys.fare();
+        }
+      }
+    } else { // aboard — head for the flag
+      t.aboardT += dt;
+      const rem = t.dropDist - g.dist;
+      if(rem <= 10 && Math.abs(g.px - t.dropLane) < 0.42){
+        const tip = Math.max(0, Math.round(40 - t.aboardT * 0.6));
+        const fare = 60 + (g.level - 1) * 12 + tip;
+        t.trips++; t.earned += fare;
+        g.mstat.trips++;
+        g.score += fare;
+        popup(W / 2, H * 0.38, '+₹' + fare + ' FARE 🙏', '#7CFC98', 30);
+        if(tip > 0) popup(W / 2, H * 0.38 + 42, 'incl. ₹' + tip + ' speed tip ⚡', '#ffd166', 20);
+        confettiBurst(30, W / 2, H * 0.38);
+        AudioSys.fare();
+        puff(W / 2, H * 0.5, 14, ['#7CFC98','#ffd166','#fff'], 160, 0.7, 0, 5);
+        t.phase = 'wait'; t.waitT = 2.5;
+        updateHUD();
+      }
     }
   }
   g.score = Math.max(g.score, Math.floor(g.dist)); // distance floor + kept bonuses
@@ -1473,7 +1534,7 @@ document.getElementById('honkBtn').addEventListener('pointerdown', e => { e.stop
 function handleTap(x, y){
   AudioSys.init();
   if(G.state === ST.OPENING){
-    if(G.ot > 2.6) startCountdown();
+    if(G.ot > 2.6){ G.state = ST.MENU; G.menuView = 'modes'; }
     return;
   }
   if(G.state === ST.OVER && G.overT > 0.9){
@@ -1489,7 +1550,7 @@ function handleTap(x, y){
 }
 
 function startCountdown(){
-  if(G.state !== ST.OPENING && G.state !== ST.OVER) return;
+  if(G.state !== ST.OPENING && G.state !== ST.OVER && G.state !== ST.MENU) return;
   resetRun();
   G.state = ST.COUNTDOWN; G.cdT = 0; G.cdN = 3; G.cdLast = 4;
   confettiBurst(60);
@@ -1504,8 +1565,17 @@ function startCountdown(){
 function updateHUD(){
   document.getElementById('scoreVal').textContent = G.score;
   document.getElementById('coinVal').textContent = G.coins;
-  document.getElementById('fareVal').textContent = G.fares;
+  document.getElementById('fareVal').textContent = (G.mode === 'trip' && G.trip) ? G.trip.trips : G.fares;
   document.getElementById('heartVal').textContent = '♥'.repeat(Math.max(0, G.hearts || 0)) || '—';
+  const tv = document.getElementById('tripVal');
+  if(tv){
+    if(G.mode === 'trip' && G.trip){
+      const t = G.trip;
+      tv.textContent = t.phase === 'aboard'
+        ? ' · 🚩 ' + Math.max(0, Math.round(t.dropDist - G.dist)) + 'm'
+        : ' · 🧍 waiting…';
+    } else tv.textContent = '';
+  }
   document.getElementById('hudLevel').textContent = 'LV ' + G.level;
   const hb = document.getElementById('honkBtn');
   if(hb) hb.style.opacity = G.honkCd > 0 ? 0.45 : 1;
@@ -1641,6 +1711,14 @@ function drawCountdown(){
   ctx.fillStyle = n > 0 ? '#ffd166' : '#7CFC98';
   ctx.fillText(label, 0, 0);
   ctx.restore();
+  // mode label
+  ctx.textAlign = 'center';
+  ctx.font = '800 20px -apple-system,Segoe UI,Roboto,sans-serif';
+  ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.6)';
+  const modeMsg = G.mode === 'trip' ? '🧍 TRIP MODE' : '🛺 ARCADE';
+  ctx.strokeText(modeMsg, W / 2, H * 0.42 + 90);
+  ctx.fillStyle = G.mode === 'trip' ? '#7CFC98' : '#ffd166';
+  ctx.fillText(modeMsg, W / 2, H * 0.42 + 90);
   drawParts();
   vignette();
 }
@@ -1653,6 +1731,59 @@ function drawPlay(){
     const side = p.side;
     const x = W / 2 + curveOff(z) + side * (roadHalf(z) + 30 * scaleAt(z) + 14);
     drawPassenger(x, yAt(z), baseS() * scaleAt(z) * 0.9, true, p.skin, p.shirt);
+  }
+  // trip mode: waiting passenger waves + destination flag
+  if(G.mode === 'trip' && G.trip){
+    const t = G.trip;
+    if(t.phase === 'wait' && t.pax){
+      const p = t.pax, z = clamp(p.z, 0, 1);
+      const x = W / 2 + curveOff(z) + p.side * (roadHalf(z) + 30 * scaleAt(z) + 14);
+      const y = yAt(z), s = baseS() * scaleAt(z);
+      drawPassenger(x, y, s * 0.95, true, p.skin, p.shirt);
+      // waving "TAXI!" bubble
+      const bob = Math.sin(G.time * 6) * 4 * s;
+      ctx.textAlign = 'center';
+      ctx.font = '800 ' + Math.max(11, 17 * s + 8) + 'px sans-serif';
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.6)';
+      const bx = x, byy = y - 64 * s + bob;
+      ctx.strokeText('👋 TAXI!', bx, byy);
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText('👋 TAXI!', bx, byy);
+    }
+    if(t.phase === 'aboard'){
+      const rem = t.dropDist - G.dist;
+      if(rem < 650){
+        const z = clamp(rem / 650, 0, 1);
+        const fx = laneX(t.dropLane, z), fy = yAt(z), s = baseS() * scaleAt(z);
+        // glowing guide strip on the target lane
+        ctx.fillStyle = 'rgba(124,252,152,.16)';
+        const steps = 8;
+        for(let i = 0; i < steps; i++){
+          const zz = (z * i) / steps;
+          const zx = laneX(t.dropLane, zz), zy = yAt(zz);
+          const zw = roadHalf(zz) * 0.30 * (1 - zz * 0.5);
+          ctx.fillRect(zx - zw / 2, zy - 6 * (1 - zz) - 4, zw, 12 * (1 - zz) + 8);
+        }
+        // checkered flag pole
+        const ph2 = 130 * s;
+        ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = Math.max(2, 5 * s); ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - ph2); ctx.stroke();
+        const fw = 46 * s, fh = 30 * s, fx0 = fx, fy0 = fy - ph2;
+        const wave = Math.sin(G.time * 8) * 4 * s;
+        for(let r2 = 0; r2 < 3; r2++) for(let c2 = 0; c2 < 4; c2++){
+          ctx.fillStyle = (r2 + c2) % 2 ? '#111' : '#fff';
+          ctx.fillRect(fx0 + c2 * fw / 4, fy0 + r2 * fh / 3 + Math.sin(G.time * 8 + c2) * 2 * s, fw / 4 + 1, fh / 3 + 1);
+        }
+        // distance label
+        ctx.textAlign = 'center';
+        ctx.font = '800 ' + Math.max(12, 20 * s + 8) + 'px sans-serif';
+        ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.65)';
+        const lbl = '🚩 ' + Math.max(0, Math.round(rem)) + 'm';
+        ctx.strokeText(lbl, fx, fy0 - 14 * s);
+        ctx.fillStyle = '#7CFC98';
+        ctx.fillText(lbl, fx, fy0 - 14 * s);
+      }
+    }
   }
   // coins
   for(const c of G.coinsArr){
@@ -1726,7 +1857,9 @@ function drawGameOver(){
   ctx.fillStyle = 'rgba(255,255,255,.75)';
   ctx.fillText('SCORE  ' + G.score, W / 2, py + 100);
   ctx.fillText('BEST  ' + G.best, W / 2, py + 126);
-  ctx.fillText('🪙 ' + G.coins + ' coins   🧍 ' + G.fares + ' fares', W / 2, py + 152);
+  ctx.fillText(G.mode === 'trip' && G.trip
+    ? '🪙 ' + G.coins + ' coins   🧍 ' + G.trip.trips + ' trips   ₹' + G.trip.earned
+    : '🪙 ' + G.coins + ' coins   🧍 ' + G.fares + ' fares', W / 2, py + 152);
   if(G.newBest){
     ctx.fillStyle = '#7CFC98'; ctx.font = '800 18px sans-serif';
     ctx.fillText('★ NEW BEST! ★', W / 2, py + 180);
@@ -1746,7 +1879,7 @@ function drawGameOver(){
   rr(bx, by, bw, bh, 14); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = '800 18px sans-serif';
   ctx.fillText('🎨 GARAGE', W / 2, by + 33);
-  G.tapZones.push({x: bx, y: by, w: bw, h: bh, fn: openGarage});
+  G.tapZones.push({x: bx, y: by, w: bw, h: bh, fn: () => openGarage('over')});
   by += 64;
   ctx.fillStyle = '#f59e0b';
   rr(bx, by, bw, bh, 14); ctx.fill();
@@ -1756,12 +1889,14 @@ function drawGameOver(){
 }
 
 /* ---------- garage: spend coins on rickshaw paints ---------- */
-function openGarage(){
+function openGarage(from){
   if(!Array.isArray(G.owned) || G.owned.length !== PAINTS.length){
     const old = Array.isArray(G.owned) ? G.owned : [];
     G.owned = PAINTS.map((_, i) => i === 0 || !!old[i]);
   }
   G.garageMsgT = 0;
+  G.menuView = 'garage';
+  G.garageFrom = from || 'over';
   G.state = ST.MENU;
 }
 function garageTap(i){
@@ -1777,6 +1912,59 @@ function garageTap(i){
     G.garageMsgT = 1.8;
   }
 }
+/* ---------- mode select: arcade vs trip ---------- */
+function drawModes(){
+  const pw = Math.min(W * 0.92, 400);
+  const px = W / 2 - pw / 2;
+  // darken the busy city backdrop behind the menu
+  const scrim = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+  scrim.addColorStop(0, 'rgba(4,6,14,.78)');
+  scrim.addColorStop(1, 'rgba(4,6,14,0)');
+  ctx.fillStyle = scrim; ctx.fillRect(0, 0, W, H * 0.62);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = '900 30px -apple-system,Segoe UI,Roboto,sans-serif';
+  ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+  const titleY = H * 0.15;
+  ctx.strokeText('🛺 RICKSHAW RUSH', W / 2, titleY);
+  ctx.fillText('🛺 RICKSHAW RUSH', W / 2, titleY);
+  ctx.font = '800 14px sans-serif'; ctx.fillStyle = '#ffd166';
+  ctx.fillText('— CHOOSE YOUR RIDE —', W / 2, titleY + 30);
+  G.tapZones = [];
+  const cards = [
+    {mode:'arcade', icon:'🛺', title:'ARCADE', desc:'Dodge traffic · Survive · High score'},
+    {mode:'trip',   icon:'🧍', title:'TRIP MODE', desc:'Pick up passengers · Drop off · Earn ₹ fares'},
+  ];
+  const ch = 104, gap = 14;
+  let cy = titleY + 56;
+  for(const c of cards){
+    ctx.fillStyle = 'rgba(20,26,46,.93)';
+    rr(px, cy, pw, ch, 18); ctx.fill();
+    ctx.strokeStyle = c.mode === 'trip' ? 'rgba(124,252,152,.55)' : 'rgba(255,209,102,.55)';
+    ctx.lineWidth = 2;
+    rr(px, cy, pw, ch, 18); ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.font = '900 22px -apple-system,Segoe UI,Roboto,sans-serif';
+    ctx.fillText(c.icon + '  ' + c.title, px + 22, cy + 44);
+    ctx.fillStyle = 'rgba(255,255,255,.65)'; ctx.font = '600 13.5px sans-serif';
+    ctx.fillText(c.desc, px + 22, cy + 72);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#7CFC98'; ctx.font = '800 16px sans-serif';
+    ctx.fillText('PLAY ›', px + pw - 22, cy + 60);
+    G.tapZones.push({x: px, y: cy, w: pw, h: ch, fn: ((m) => () => { G.mode = m; startCountdown(); })(c.mode)});
+    cy += ch + gap;
+  }
+  // garage shortcut
+  const bh = 52, by = cy + 8;
+  ctx.fillStyle = 'rgba(255,255,255,.08)';
+  rr(px, by, pw, bh, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5;
+  rr(px, by, pw, bh, 14); ctx.stroke();
+  ctx.fillStyle = '#ffd166'; ctx.font = '800 16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('🏪 GARAGE   ·   🪙 ' + G.bank, W / 2, by + 33);
+  G.tapZones.push({x: px, y: by, w: pw, h: bh, fn: () => openGarage('modes')});
+  drawParts();
+}
+
 function drawGarage(){
   const pw = Math.min(W * 0.92, 400), ph = 500;
   const px = W / 2 - pw / 2, py = H / 2 - ph / 2;
@@ -1818,7 +2006,10 @@ function drawGarage(){
   rr(bx, by, bw, bh, 14); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = '800 17px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText('‹ BACK', W / 2, by + 32);
-  G.tapZones.push({x: bx, y: by, w: bw, h: bh, fn: () => { G.state = ST.OVER; }});
+  G.tapZones.push({x: bx, y: by, w: bw, h: bh, fn: () => {
+    if(G.garageFrom === 'modes'){ G.state = ST.MENU; G.menuView = 'modes'; }
+    else { G.state = ST.OVER; }
+  }});
   drawParts();
 }
 
@@ -1858,7 +2049,7 @@ function drawGaragePaints(px, py, pw){
 }
 
 function drawGarageMissions(px, py, pw){
-  const rh = 32, gap = 4;
+  const rh = 27, gap = 3;
   let ry = py + 128;
   for(const m of MISSIONS){
     const st = G.mprog[m.id] || {p:0, done:false};
@@ -1866,17 +2057,17 @@ function drawGarageMissions(px, py, pw){
     rr(px + 16, ry, pw - 32, rh, 9); ctx.fill();
     const pct = clamp(st.p / m.target, 0, 1);
     ctx.fillStyle = 'rgba(255,255,255,.10)';
-    rr(px + 28, ry + 20, pw - 56, 5, 2.5); ctx.fill();
+    rr(px + 28, ry + 17, pw - 56, 4, 2); ctx.fill();
     ctx.fillStyle = st.done ? '#7CFC98' : '#ffd166';
-    if(pct > 0){ rr(px + 28, ry + 20, Math.max(5, (pw - 56) * pct), 5, 2.5); ctx.fill(); }
+    if(pct > 0){ rr(px + 28, ry + 17, Math.max(4, (pw - 56) * pct), 4, 2); ctx.fill(); }
     ctx.textAlign = 'left';
     ctx.fillStyle = st.done ? '#7CFC98' : '#fff';
-    ctx.font = '800 12.5px sans-serif';
-    ctx.fillText((st.done ? '✅ ' : '🎯 ') + m.name, px + 28, ry + 14);
+    ctx.font = '800 12px sans-serif';
+    ctx.fillText((st.done ? '✅ ' : '🎯 ') + m.name, px + 28, ry + 12);
     ctx.textAlign = 'right';
     ctx.fillStyle = st.done ? '#7CFC98' : '#ffd166';
-    ctx.font = '700 11px sans-serif';
-    ctx.fillText(st.done ? 'DONE +' + m.reward + ' 🪙' : st.p + '/' + m.target + ' · +' + m.reward + ' 🪙', px + pw - 28, ry + 14);
+    ctx.font = '700 10.5px sans-serif';
+    ctx.fillText(st.done ? 'DONE +' + m.reward + ' 🪙' : st.p + '/' + m.target + ' · +' + m.reward + ' 🪙', px + pw - 28, ry + 12);
     ry += rh + gap;
   }
 }
@@ -1926,7 +2117,7 @@ function frame(now){
     drawPlay();
   }
   else if(G.state === ST.OVER){ G.overT += dt; updateParts(dt); drawGameOver(); }
-  else if(G.state === ST.MENU){ if(G.garageMsgT > 0) G.garageMsgT -= dt; drawSky(); drawBuildings(); drawStreetlights(); drawRoad(); updateParts(dt); drawGarage(); }
+  else if(G.state === ST.MENU){ if(G.garageMsgT > 0) G.garageMsgT -= dt; drawSky(); drawBuildings(); drawStreetlights(); drawRoad(); updateParts(dt); if(G.menuView === 'garage') drawGarage(); else drawModes(); }
   ctx.restore();
   requestAnimationFrame(frame);
 }
